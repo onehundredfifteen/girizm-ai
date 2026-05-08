@@ -2,14 +2,21 @@ import ollama
 import sqlite3
 import json
 import math
+import string
 
 MODEL = "nomic-embed-text"
+GIRYZM_TROUTH_SOURCE = "giryzm-tokenized.txt"
 
-TEXT = """
-1|Na początku był kod.
-2|Kod był z programistą.
-3|I kod był dobry.
-"""
+
+lines = []
+verses = []
+
+with open(GIRYZM_TROUTH_SOURCE, "r") as file:
+    contents = file.read()
+    lines = contents.split("\n")
+    for line in lines:
+        s = line.translate(str.maketrans({'.': '$', ';': '$','\n': '$'}))
+        verses.extend(s.split())
 
 # --- baza ---
 db = sqlite3.connect("embeddings.db")
@@ -24,8 +31,19 @@ CREATE TABLE IF NOT EXISTS verses (
 """)
 
 # --- podział na wersety i embedding ---
-for line in TEXT.strip().splitlines():
-    verse_id, verse_text = line.split("|", 1)
+for line in verses:
+    last_verse = "1"
+    subverse_counter = 1
+
+    parts = line.split('|')
+    if len(parts) == 2:
+        verse_id, verse_text = parts
+    else:
+        verse_text = parts[0]
+        verse_id = last_verse + f".{subverse_counter}"
+        subverse_counter += 1
+
+    print()(f"Przetwarzanie wersetu {verse_id}")    
 
     response = ollama.embeddings(
         model=MODEL,
