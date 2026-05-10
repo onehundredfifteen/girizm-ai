@@ -1,0 +1,1 @@
+ollama create girizm-ai -f girizm-ai-modelfile

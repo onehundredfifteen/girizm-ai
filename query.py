@@ -4,7 +4,7 @@ import json
 import math
 import string
 
-MODEL = "nomic-embed-text"
+MODEL = "girim-ai"
 GIRYZM_TROUTH_SOURCE = "giryzm-tokenized.txt"
 
 
@@ -58,7 +58,7 @@ for v in verses:
         verse_text = parts[0]
         
 
-    print(f"Przetwarzanie wersetu {verse_key}:{verse_text}")    
+    print(f"Przetwarzanie wersetu +{verse_key}:{verse_text}+")    
 
     pro = f"{verse_key.strip()} {verse_text.strip()}"
 
