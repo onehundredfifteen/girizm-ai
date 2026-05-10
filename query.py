@@ -4,87 +4,12 @@ import json
 import math
 import string
 
-MODEL = "girim-ai"
-GIRYZM_TROUTH_SOURCE = "giryzm-tokenized.txt"
-
-
-lines = []
-verses = []
-verse_keys = []
-
-with open(GIRYZM_TROUTH_SOURCE, "r") as file:
-    contents = file.read()
-    lines = contents.split("\n")[1:]  # skip header
-
-    for line in lines:
-        s = line.translate(str.maketrans({'.': '$', ';': '$','\n': '$'}))
-        v = s.split('$')
-        verses.extend(v)
-        verse_keys.append(len(v))
+MODEL = "nomic-embed-text"
+CHAT_MODEL = "girizm-ai"
 
 # --- baza ---
 db = sqlite3.connect("embeddings.db")
 cur = db.cursor()
-
-cur.execute("""
-CREATE TABLE IF NOT EXISTS verses (
-    id INTEGER PRIMARY KEY,
-    verse TEXT,
-    embedding TEXT
-)
-""")
-
-cur.execute("""
-DELETE FROM verses ;
-""")
-
-# --- podział na wersety i embedding ---
-verse_id = 0
-subverse_counter = 0
-last_verse_key = "1"
-line_key = 0
-for v in verses:
-    parts = v.split('|')
-    
-    if len(parts) == 2:
-        verse_key, verse_text = parts
-        last_verse_key = verse_key
-        subverse_counter = verse_keys[line_key] - 1
-        line_key += 1
-    else:
-        subverse_counter -= 1
-        subkey = verse_keys[line_key] - subverse_counter
-        verse_key = f"{last_verse_key}.{subkey}"
-        verse_text = parts[0]
-        
-
-    print(f"Przetwarzanie wersetu +{verse_key}:{verse_text}+")    
-
-    pro = f"{verse_key.strip()} {verse_text.strip()}"
-
-    if(len(pro.strip()) < 3):
-        print(f"PSkip wersetu {verse_key}:{verse_text}") 
-        continue
-
-    response = ollama.embeddings(
-        model=MODEL,
-        prompt=pro.strip()
-    )
-
-    embedding = response["embedding"]
-
-    cur.execute("""
-    INSERT INTO verses(id, verse, embedding)
-    VALUES (?, ?, ?)
-    """, (
-        verse_id,
-        verse_text,
-        json.dumps(embedding)
-    ))
-
-    verse_id+=1
-
-db.commit()
 
 # --- cosine similarity ---
 def cosine_similarity(a, b):
@@ -96,7 +21,7 @@ def cosine_similarity(a, b):
     return dot / (norm_a * norm_b)
 
 # --- test ---
-query = "Girazm prawdę głosi, a nie kłamie"
+query = "Kim jest Gira?"
 
 query_embedding = ollama.embeddings(
     model=MODEL,
@@ -116,9 +41,22 @@ for row in cur.execute("SELECT id, verse, embedding FROM verses"):
 
 results.sort(reverse=True)
 
-print("\nNajbardziej podobne:\n")
+context = ""
 
-for score, verse_id, verse_text in results[:3]:
-    print(f"{score:.4f} | {verse_id} | {verse_text}")
+for score, verse_id, verse_text in results[:5]:
+    context += f"{verse_text}."
+
+response = ollama.chat(
+    model=CHAT_MODEL,
+    messages=[
+        #{"role": "system", "content": "You are a Senior Priest of the god called Gira. You know the verses of the holy book called Girizm by heart. You are a wise and helpful guide to those who seek the truth."},
+        {"role": "user", "content": f"Na podstawie tego kontekstu: {context} Odpowiedz na pytanie: {query}"}
+    ]
+)
+
+print(response)
+answer = response["message"]["content"]
+
+print("Odpowiedź:", answer)
 
 db.close()
