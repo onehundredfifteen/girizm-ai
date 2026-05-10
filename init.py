@@ -10,13 +10,17 @@ GIRYZM_TROUTH_SOURCE = "giryzm-tokenized.txt"
 
 lines = []
 verses = []
+verse_keys = []
 
 with open(GIRYZM_TROUTH_SOURCE, "r") as file:
     contents = file.read()
-    lines = contents.split("\n")
+    lines = contents.split("\n")[1:]  # skip header
+
     for line in lines:
         s = line.translate(str.maketrans({'.': '$', ';': '$','\n': '$'}))
-        verses.extend(s.split())
+        v = s.split('$')
+        verses.extend(v)
+        verse_keys.append(len(v))
 
 # --- baza ---
 db = sqlite3.connect("embeddings.db")
@@ -30,24 +34,41 @@ CREATE TABLE IF NOT EXISTS verses (
 )
 """)
 
+cur.execute("""
+DELETE FROM verses ;
+""")
+
 # --- podział na wersety i embedding ---
-for line in verses:
-    last_verse = "1"
-    subverse_counter = 1
-
-    parts = line.split('|')
+verse_id = 0
+subverse_counter = 0
+last_verse_key = "1"
+line_key = 0
+for v in verses:
+    parts = v.split('|')
+    
     if len(parts) == 2:
-        verse_id, verse_text = parts
+        verse_key, verse_text = parts
+        last_verse_key = verse_key
+        subverse_counter = verse_keys[line_key] - 1
+        line_key += 1
     else:
+        subverse_counter -= 1
+        subkey = verse_keys[line_key] - subverse_counter
+        verse_key = f"{last_verse_key}.{subkey}"
         verse_text = parts[0]
-        verse_id = last_verse + f".{subverse_counter}"
-        subverse_counter += 1
+        
 
-    print()(f"Przetwarzanie wersetu {verse_id}")    
+    print(f"Przetwarzanie wersetu {verse_key}:{verse_text}")    
+
+    pro = f"{verse_key.strip()} {verse_text.strip()}"
+
+    if(pro.strip() == ""):
+        print(f"PSkip wersetu {verse_key}:{verse_text}") 
+        continue
 
     response = ollama.embeddings(
         model=MODEL,
-        prompt=verse_text
+        prompt=pro.strip()
     )
 
     embedding = response["embedding"]
@@ -56,10 +77,12 @@ for line in verses:
     INSERT INTO verses(id, verse, embedding)
     VALUES (?, ?, ?)
     """, (
-        int(verse_id),
+        verse_id,
         verse_text,
         json.dumps(embedding)
     ))
+
+    verse_id+=1
 
 db.commit()
 
