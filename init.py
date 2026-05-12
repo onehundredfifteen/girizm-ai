@@ -7,30 +7,28 @@ MODEL = "nomic-embed-text"
 GIRYZM_TRUTH_SOURCE = "giryzm-tokenized.txt"
 
 # --- some methods for processing data etc
-# save embeddings in db
-def add_embedding(cur, embedding_id, memory_text):
+
+# calculate embedding
+def calculate_embedding(text):
     response = ollama.embeddings(
         model=MODEL,
-        prompt=memory_text.strip()
+        prompt=text.strip()
     )
 
-    embedding = response["embedding"]
-    print(f"Adding embedding {embedding_id}({len(memory_text)}): {memory_text[:90]}...")
+    return response["embedding"]
+
+# save embeddings in db
+def save_embedding(cur, embedding_id, embedding):
+    
+    print(f"Adding embedding {embedding_id}({len(embedding)}): {embedding[:90]}...")
     cur.execute("""
     INSERT INTO verses(id, verse, embedding)
     VALUES (?, ?, ?)
     """, (
         embedding_id,
-        memory_text,
+        embedding,
         json.dumps(embedding)
     ))
-
-# bulk load
-def bulk_add_embeddings(cur, start_idx, content):
-    for i, c in enumerate(content):
-        add_embedding(cur, start_idx + i, c)
-    
-    return start_idx + len(content)
 
 # generate chunks of sentences with some overlap
 def chunk_sentences(sentences, max_sentences, overlap):
@@ -40,8 +38,8 @@ def chunk_sentences(sentences, max_sentences, overlap):
     while start < len(sentences):
         end = start + max_sentences
 
-        chunk = " ".join(sentences[start:end])
-        chunks.append(chunk)
+        chunk = ". ".join(sentences[start:end],)
+        chunks.append(chunk + ".")
 
         start = end - overlap
 
@@ -53,6 +51,7 @@ def chunk_sentences(sentences, max_sentences, overlap):
 lines = [] # raw lines from file
 verses = [] # sentences split from lines
 chunks = [] # chunks of sentences
+embeddings = [] # list of all embeddings
 
 # load lines from file and split into sentences
 with open(GIRYZM_TRUTH_SOURCE, "r") as file:
@@ -67,7 +66,13 @@ with open(GIRYZM_TRUTH_SOURCE, "r") as file:
 chunks = chunk_sentences(verses, max_sentences=5, overlap=1)
 chunks.extend(chunk_sentences(verses, max_sentences=8, overlap=3))
 
-# database setup
+# calculate embeddings for all chunks
+for line in lines:
+    embeddings.append(calculate_embedding(line))
+for chunk in chunks:
+    embeddings.append(calculate_embedding(chunk))
+
+# database setup 
 db = sqlite3.connect(DBFILE)
 cur = db.cursor()
 
@@ -81,13 +86,10 @@ CREATE TABLE IF NOT EXISTS verses (
 
 cur.execute("""DELETE FROM verses;""")
 
+for i, c in enumerate(embeddings):
+    save_embedding(cur, i, c)
 
-start_idx = bulk_add_embeddings(cur, 0, lines)
-print(f">> Added embeddings for {len(lines)} lines.")
-#start_idx = bulk_add_embeddings(cur, start_idx, verses)
-#print(f">> Added embeddings for {len(verses)} verses.")
-start_idx = bulk_add_embeddings(cur, start_idx, chunks)
-print(f">> Added embeddings for {len(chunks)} overlapping chunks.")
+print(f">> Added {len(embeddings)} embeddings")
 
 db.commit()
 db.close()

@@ -8,7 +8,7 @@ MODEL = "nomic-embed-text"
 CHAT_MODEL = "girizm-ai"
 DBFILE = "embeddings.db"
 
-QUERY = "Co dawał Marsjanin Girze?"
+QUERY = "Kim jest Gira?"
 
 # --- setup ---
 db = sqlite3.connect(DBFILE)
@@ -54,6 +54,7 @@ def get_context():
 
     return context
 
+print(f"{QUERY}")
 print("Looking in memory...")
 context = get_context()
 
