@@ -6,9 +6,12 @@ import string
 
 MODEL = "nomic-embed-text"
 CHAT_MODEL = "girizm-ai"
+DBFILE = "embeddings.db"
 
-# --- baza ---
-db = sqlite3.connect("embeddings.db")
+QUERY = "Co dawał Marsjanin Girze?"
+
+# --- setup ---
+db = sqlite3.connect(DBFILE)
 cur = db.cursor()
 
 # --- cosine similarity ---
@@ -20,41 +23,49 @@ def cosine_similarity(a, b):
 
     return dot / (norm_a * norm_b)
 
-# --- test ---
-query = "Kim jest Gira?"
+def get_context():
+    query_embedding = ollama.embeddings(
+        model=MODEL,
+        prompt=QUERY
+    )["embedding"]
 
-query_embedding = ollama.embeddings(
-    model=MODEL,
-    prompt=query
-)["embedding"]
+    results = []
 
-results = []
+    for row in cur.execute("SELECT id, verse, embedding FROM verses"):
+        verse_id, verse_text, emb_json = row
 
-for row in cur.execute("SELECT id, verse, embedding FROM verses"):
-    verse_id, verse_text, emb_json = row
+        embedding = json.loads(emb_json)
 
-    embedding = json.loads(emb_json)
+        score = cosine_similarity(query_embedding, embedding)
 
-    score = cosine_similarity(query_embedding, embedding)
+        results.append((score, verse_id, verse_text))
 
-    results.append((score, verse_id, verse_text))
+    results.sort(reverse=True)
 
-results.sort(reverse=True)
+    context = ""
 
-context = ""
+    for score, verse_id, verse_text in results[:5]:
+        log_verse = verse_text[:90]
+        if len(verse_text) > 90:
+            log_verse += "..."
 
-for score, verse_id, verse_text in results[:5]:
-    context += f"{verse_text}."
+        print(f"Found chunk #{verse_id} with score {score:.4f}: {log_verse}")
+        context += f"{verse_text}.\n"
 
+    return context
+
+print("Looking in memory...")
+context = get_context()
+
+print("Connecting the dots...")
 response = ollama.chat(
     model=CHAT_MODEL,
     messages=[
-        #{"role": "system", "content": "You are a Senior Priest of the god called Gira. You know the verses of the holy book called Girizm by heart. You are a wise and helpful guide to those who seek the truth."},
-        {"role": "user", "content": f"Na podstawie tego kontekstu: {context} Odpowiedz na pytanie: {query}"}
+        {"role": "user", "content": "Context: " + context},
+        {"role": "user", "content": f"{QUERY}"}
     ]
 )
 
-print(response)
 answer = response["message"]["content"]
 
 print("Odpowiedź:", answer)

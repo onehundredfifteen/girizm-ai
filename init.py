@@ -1,29 +1,74 @@
 import ollama
 import sqlite3
 import json
-import math
-import string
 
+DBFILE = "embeddings.db"
 MODEL = "nomic-embed-text"
-GIRYZM_TROUTH_SOURCE = "giryzm-tokenized.txt"
+GIRYZM_TRUTH_SOURCE = "giryzm-tokenized.txt"
 
+# --- some methods for processing data etc
+# save embeddings in db
+def add_embedding(cur, embedding_id, memory_text):
+    response = ollama.embeddings(
+        model=MODEL,
+        prompt=memory_text.strip()
+    )
 
-lines = []
-verses = []
-verse_keys = []
+    embedding = response["embedding"]
+    print(f"Adding embedding {embedding_id}({len(memory_text)}): {memory_text[:90]}...")
+    cur.execute("""
+    INSERT INTO verses(id, verse, embedding)
+    VALUES (?, ?, ?)
+    """, (
+        embedding_id,
+        memory_text,
+        json.dumps(embedding)
+    ))
 
-with open(GIRYZM_TROUTH_SOURCE, "r") as file:
+# bulk load
+def bulk_add_embeddings(cur, start_idx, content):
+    for i, c in enumerate(content):
+        add_embedding(cur, start_idx + i, c)
+    
+    return start_idx + len(content)
+
+# generate chunks of sentences with some overlap
+def chunk_sentences(sentences, max_sentences, overlap):
+    chunks = []
+    start = 0
+
+    while start < len(sentences):
+        end = start + max_sentences
+
+        chunk = " ".join(sentences[start:end])
+        chunks.append(chunk)
+
+        start = end - overlap
+
+    return chunks
+
+# --- start of the main code
+
+# data
+lines = [] # raw lines from file
+verses = [] # sentences split from lines
+chunks = [] # chunks of sentences
+
+# load lines from file and split into sentences
+with open(GIRYZM_TRUTH_SOURCE, "r") as file:
     contents = file.read()
     lines = contents.split("\n")[1:]  # skip header
-
+    # split sentences -> by . ; ? ! \n
     for line in lines:
-        s = line.translate(str.maketrans({'.': '$', ';': '$','\n': '$'}))
-        v = s.split('$')
-        verses.extend(v)
-        verse_keys.append(len(v))
+        s = line.strip().translate(str.maketrans({'.':'$',';':'$','\n':'$','!':'$','?':'$'}))
+        verses.extend(filter(str.strip, s.split('$')))
 
-# --- baza ---
-db = sqlite3.connect("embeddings.db")
+# generate chunks
+chunks = chunk_sentences(verses, max_sentences=5, overlap=1)
+chunks.extend(chunk_sentences(verses, max_sentences=8, overlap=3))
+
+# database setup
+db = sqlite3.connect(DBFILE)
 cur = db.cursor()
 
 cur.execute("""
@@ -34,91 +79,15 @@ CREATE TABLE IF NOT EXISTS verses (
 )
 """)
 
-cur.execute("""
-DELETE FROM verses ;
-""")
+cur.execute("""DELETE FROM verses;""")
 
-# --- podział na wersety i embedding ---
-verse_id = 0
-subverse_counter = 0
-last_verse_key = "1"
-line_key = 0
-for v in verses:
-    parts = v.split('|')
-    
-    if len(parts) == 2:
-        verse_key, verse_text = parts
-        last_verse_key = verse_key
-        subverse_counter = verse_keys[line_key] - 1
-        line_key += 1
-    else:
-        subverse_counter -= 1
-        subkey = verse_keys[line_key] - subverse_counter
-        verse_key = f"{last_verse_key}.{subkey}"
-        verse_text = parts[0]
-        
 
-    print(f"Przetwarzanie wersetu {verse_key}:{verse_text}")    
-
-    pro = f"{verse_key.strip()} {verse_text.strip()}"
-
-    if(len(pro.strip()) < 3):
-        print(f"PSkip wersetu {verse_key}:{verse_text}") 
-        continue
-
-    response = ollama.embeddings(
-        model=MODEL,
-        prompt=pro.strip()
-    )
-
-    embedding = response["embedding"]
-
-    cur.execute("""
-    INSERT INTO verses(id, verse, embedding)
-    VALUES (?, ?, ?)
-    """, (
-        verse_id,
-        verse_text,
-        json.dumps(embedding)
-    ))
-
-    verse_id+=1
+start_idx = bulk_add_embeddings(cur, 0, lines)
+print(f">> Added embeddings for {len(lines)} lines.")
+#start_idx = bulk_add_embeddings(cur, start_idx, verses)
+#print(f">> Added embeddings for {len(verses)} verses.")
+start_idx = bulk_add_embeddings(cur, start_idx, chunks)
+print(f">> Added embeddings for {len(chunks)} overlapping chunks.")
 
 db.commit()
-
-# --- cosine similarity ---
-def cosine_similarity(a, b):
-    dot = sum(x * y for x, y in zip(a, b))
-
-    norm_a = math.sqrt(sum(x * x for x in a))
-    norm_b = math.sqrt(sum(x * x for x in b))
-
-    return dot / (norm_a * norm_b)
-
-# --- test ---
-query = "Girazm prawdę głosi, a nie kłamie"
-
-query_embedding = ollama.embeddings(
-    model=MODEL,
-    prompt=query
-)["embedding"]
-
-results = []
-
-for row in cur.execute("SELECT id, verse, embedding FROM verses"):
-    verse_id, verse_text, emb_json = row
-
-    embedding = json.loads(emb_json)
-
-    score = cosine_similarity(query_embedding, embedding)
-
-    results.append((score, verse_id, verse_text))
-
-results.sort(reverse=True)
-
-print("\nNajbardziej podobne:\n")
-
-for score, verse_id, verse_text in results[:3]:
-    print(f"{score:.4f} | {verse_id} | {verse_text}")
-
 db.close()
