@@ -70,7 +70,7 @@ def get_context():
 
     return context
 
-print(f"{QUERY}")
+print(f"\"{QUERY}\"")
 print("Looking in memory...")
 context = get_context()
 
@@ -79,7 +79,7 @@ response = ollama.chat(
     model=CHAT_MODEL,
     messages=[
         {"role": "user", "content": "Context: " + context},
-        {"role": "user", "content": f"{QUERY}"}
+        {"role": "user", "content": QUERY}
     ]
 )
 
