@@ -1,3 +1,5 @@
+import math
+
 import ollama
 import sqlite3
 import json
@@ -17,18 +19,30 @@ def calculate_embedding(text):
 
     return response["embedding"]
 
-# save embeddings in db
-def save_embedding(cur, embedding_id, embedding):
+# --- cosine similarity ---
+def cosine_similarity(a, b):
+    dot = sum(x * y for x, y in zip(a, b))
+
+    norm_a = math.sqrt(sum(x * x for x in a))
+    norm_b = math.sqrt(sum(x * x for x in b))
+
+    return dot / (norm_a * norm_b)
+
+def deduplicate(embeddings, threshold=0.95):
     
-    print(f"Adding embedding {embedding_id}({len(embedding)}): {embedding[:90]}...")
-    cur.execute("""
-    INSERT INTO verses(id, verse, embedding)
-    VALUES (?, ?, ?)
-    """, (
-        embedding_id,
-        embedding,
-        json.dumps(embedding)
-    ))
+    unique_embeddings = []
+    for candidate in embeddings:
+        duplicate = False
+        for existing in unique_embeddings:
+            similarity = cosine_similarity(candidate[1], existing[1])
+            if similarity > threshold:
+                duplicate = True
+                break
+
+        if not duplicate:
+            unique_embeddings.append(candidate)
+
+    return unique_embeddings
 
 # generate chunks of sentences with some overlap
 def chunk_sentences(sentences, max_sentences, overlap):
@@ -68,9 +82,16 @@ chunks.extend(chunk_sentences(verses, max_sentences=8, overlap=3))
 
 # calculate embeddings for all chunks
 for line in lines:
-    embeddings.append(calculate_embedding(line))
+    embeddings.append((line, calculate_embedding(line)))
 for chunk in chunks:
-    embeddings.append(calculate_embedding(chunk))
+    embeddings.append((chunk, calculate_embedding(chunk)))
+
+print(f"{len(embeddings)} embeddings calculated")
+embeddings = deduplicate(embeddings)
+print(f"{len(embeddings)} semantically unique embeddings after deduplication")
+for (text, embedding) in embeddings:
+    print(f"initial Embedding: {text[:90]}...")
+    
 
 # database setup 
 db = sqlite3.connect(DBFILE)
@@ -86,8 +107,16 @@ CREATE TABLE IF NOT EXISTS verses (
 
 cur.execute("""DELETE FROM verses;""")
 
-for i, c in enumerate(embeddings):
-    save_embedding(cur, i, c)
+for i, (text, embedding) in enumerate(embeddings):
+    print(f"Adding embedding {i}({len(text)}): {text[:90]}...")
+    cur.execute("""
+    INSERT INTO verses(id, verse, embedding)
+    VALUES (?, ?, ?)
+    """, (
+        i,
+        text,
+        json.dumps(embedding)
+    ))
 
 print(f">> Added {len(embeddings)} embeddings")
 

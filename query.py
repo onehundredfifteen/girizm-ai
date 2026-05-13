@@ -1,14 +1,30 @@
+import sys
+
 import ollama
 import sqlite3
 import json
 import math
-import string
+
 
 MODEL = "nomic-embed-text"
 CHAT_MODEL = "girizm-ai"
 DBFILE = "embeddings.db"
 
-QUERY = "Kim jest Gira?"
+if(len(sys.argv) < 2):
+    print("Usage: python query.py <query>|1|2|3")
+    sys.exit(1)
+
+QUERY = "Kto to Gira i czym jest Girizm?"
+
+query_arg = str(sys.argv[1])
+if(query_arg == "1"):
+    QUERY = "Co radzi Girizm, gdy ktoś jest smutny?"
+elif(query_arg == "2"):
+    QUERY = "Co radzi Girizm, gdy ktoś jest zlosliwy?"
+elif(query_arg == "3"):
+    QUERY = "Dwa złote czy to dużo dla wyznawcy Giry?"
+else:
+    QUERY = query_arg    
 
 # --- setup ---
 db = sqlite3.connect(DBFILE)
