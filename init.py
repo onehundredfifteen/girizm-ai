@@ -4,7 +4,7 @@ import ollama
 import sqlite3
 import json
 
-DBFILE = "embeddings.db"
+DBFILE = "embeddings-exp.db"
 MODEL = "nomic-embed-text"
 GIRYZM_TRUTH_SOURCE = "giryzm-tokenized.txt"
 

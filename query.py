@@ -7,8 +7,8 @@ import math
 
 
 MODEL = "nomic-embed-text"
-CHAT_MODEL = "girizm-ai"
-DBFILE = "embeddings.db"
+CHAT_MODEL = "girizm-ai-strict"
+DBFILE = "embeddings-exp.db"
 
 if(len(sys.argv) < 2):
     print("Usage: python query.py <query>|1|2|3")
@@ -71,10 +71,10 @@ def get_context():
     return context
 
 print(f"\"{QUERY}\"")
-print("Looking in memory...")
+print(f"{CHAT_MODEL}: Looking in memory...")
 context = get_context()
 
-print("Connecting the dots...")
+print(f"{CHAT_MODEL}: Connecting the dots...")
 response = ollama.chat(
     model=CHAT_MODEL,
     messages=[
@@ -85,6 +85,6 @@ response = ollama.chat(
 
 answer = response["message"]["content"]
 
-print("Odpowiedź:", answer)
+print(f"{CHAT_MODEL} says: {answer}")
 
 db.close()
